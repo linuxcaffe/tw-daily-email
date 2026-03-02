@@ -1,0 +1,11 @@
+# daily-email.rc — configuration for tw-daily-email
+
+# Task report to send — any named report, with optional rc. overrides
+# Examples: next   list   rc.context=none next   due:today
+daily.report=next
+
+# Recipient email address (required — edit before first run)
+daily.email=
+
+# Email subject prefix — date is appended automatically
+daily.subject=Task Report

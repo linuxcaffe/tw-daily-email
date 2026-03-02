@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily Taskwarrior Email Timer
+
+[Timer]
+OnCalendar=Mon..Sun 07:30
+Persistent=true
+RandomizedDelaySec=5min
+
+[Install]
+WantedBy=timers.target

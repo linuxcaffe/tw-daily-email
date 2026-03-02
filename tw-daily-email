@@ -1,0 +1,83 @@
+#!/usr/bin/env bash
+# tw-daily-email — send a daily Taskwarrior report by email
+#
+# Config:  ~/.task/config/daily-email.rc
+# Usage:   tw-daily-email [report]
+#            report — optional override of the configured report name
+# Trigger: systemd user timer  (systemctl --user start tw-daily-email.timer)
+
+set -euo pipefail
+
+readonly SCRIPT_NAME="tw-daily-email"
+readonly CONFIG_FILE="${HOME}/.task/config/daily-email.rc"
+
+# ============================================================================
+# Helpers
+# ============================================================================
+
+die() { echo "[$SCRIPT_NAME] ERROR: $*" >&2; exit 1; }
+
+get_config() {
+    local key="$1" default="${2:-}"
+    local val
+    val=$(grep -E "^[[:space:]]*${key}[[:space:]]*=" "$CONFIG_FILE" 2>/dev/null \
+        | head -1 | cut -d= -f2- \
+        | sed 's/^[[:space:]]*//; s/[[:space:]]*#.*$//; s/[[:space:]]*$//')
+    echo "${val:-$default}"
+}
+
+# ============================================================================
+# Config
+# ============================================================================
+
+[[ -f "$CONFIG_FILE" ]] \
+    || die "No config at $CONFIG_FILE — copy daily-email.rc.example and edit it"
+
+DAILY_REPORT=$(get_config  "daily.report"  "next")
+DAILY_EMAIL=$(get_config   "daily.email"   "")
+DAILY_SUBJECT=$(get_config "daily.subject" "Task Report")
+
+# Command-line argument overrides configured report
+[[ $# -gt 0 ]] && DAILY_REPORT="$1"
+
+[[ -n "$DAILY_EMAIL" ]] || die "daily.email not set in $CONFIG_FILE"
+
+command -v msmtp &>/dev/null \
+    || die "msmtp not found — install with: sudo apt install msmtp msmtp-mta"
+
+# ============================================================================
+# Sections — each writes to stdout; add new sections to build_body()
+# ============================================================================
+
+section_tasks() {
+    echo "=== ${DAILY_REPORT} ==="
+    echo ""
+    task rc.color=off rc.hooks=off "$DAILY_REPORT" 2>/dev/null || true
+}
+
+# section_weather() { ... }   # future
+# section_calendar() { ... }  # future
+
+build_body() {
+    date '+%A, %d %B %Y'
+    echo ""
+    section_tasks
+}
+
+# ============================================================================
+# Send
+# ============================================================================
+
+subject="${DAILY_SUBJECT}: $(date '+%A %d %b %Y')"
+body=$(build_body)
+
+{
+    printf "From: Task Report <%s>\n" "$DAILY_EMAIL"
+    printf "To: %s\n"                 "$DAILY_EMAIL"
+    printf "Subject: %s\n"            "$subject"
+    printf "Content-Type: text/plain; charset=utf-8\n"
+    printf "\n"
+    printf "%s\n"                     "$body"
+} | msmtp "$DAILY_EMAIL"
+
+echo "[$SCRIPT_NAME] Sent '${subject}' to ${DAILY_EMAIL}"
