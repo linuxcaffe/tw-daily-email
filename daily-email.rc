@@ -2,7 +2,7 @@
 
 # Task report to send — any named report, with optional rc. overrides
 # Examples: next   list   rc.context=none next   due:today
-daily.report=next
+daily.report=rc.context=need ls
 
 # Recipient email address (required — edit before first run)
 daily.email=

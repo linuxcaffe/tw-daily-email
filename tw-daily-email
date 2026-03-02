@@ -37,8 +37,8 @@ DAILY_REPORT=$(get_config  "daily.report"  "next")
 DAILY_EMAIL=$(get_config   "daily.email"   "")
 DAILY_SUBJECT=$(get_config "daily.subject" "Task Report")
 
-# Command-line argument overrides configured report
-[[ $# -gt 0 ]] && DAILY_REPORT="$1"
+# Command-line arguments override configured report (all args, preserving words)
+[[ $# -gt 0 ]] && DAILY_REPORT="$*"
 
 [[ -n "$DAILY_EMAIL" ]] || die "daily.email not set in $CONFIG_FILE"
 
@@ -52,7 +52,8 @@ command -v msmtp &>/dev/null \
 section_tasks() {
     echo "=== ${DAILY_REPORT} ==="
     echo ""
-    task rc.color=off rc.hooks=off "$DAILY_REPORT" 2>/dev/null || true
+    # shellcheck disable=SC2086  # word-splitting intentional: rc.* overrides + report name
+    task rc.color=off rc.hooks=off $DAILY_REPORT 2>/dev/null || true
 }
 
 # section_weather() { ... }   # future
