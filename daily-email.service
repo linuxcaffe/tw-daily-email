@@ -4,6 +4,6 @@ After=network-online.target
 
 [Service]
 Type=oneshot
-ExecStart=%h/.task/scripts/tw-daily-email
+ExecStart=%h/.task/scripts/daily-email
 StandardOutput=journal
 StandardError=journal

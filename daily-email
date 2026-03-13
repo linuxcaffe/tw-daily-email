@@ -1,0 +1,139 @@
+#!/usr/bin/env bash
+# daily-email — send a daily Taskwarrior report by email
+#
+# Config:  ~/.task/config/daily-email.rc
+# Usage:   daily-email [report]
+#            report — optional override of the configured report name
+# Trigger: systemd user timer  (systemctl --user enable --now daily-email.timer)
+
+set -euo pipefail
+
+readonly SCRIPT_NAME="daily-email"
+readonly CONFIG_FILE="${HOME}/.task/config/daily-email.rc"
+
+# ============================================================================
+# Helpers
+# ============================================================================
+
+die() { echo "[$SCRIPT_NAME] ERROR: $*" >&2; exit 1; }
+
+get_config() {
+    local key="$1" default="${2:-}"
+    local val
+    val=$(grep -E "^[[:space:]]*${key}[[:space:]]*=" "$CONFIG_FILE" 2>/dev/null \
+        | head -1 | cut -d= -f2- \
+        | sed 's/^[[:space:]]*//; s/[[:space:]]*#.*$//; s/[[:space:]]*$//')
+    echo "${val:-$default}"
+}
+
+# ============================================================================
+# Config
+# ============================================================================
+
+[[ -f "$CONFIG_FILE" ]] \
+    || die "No config at $CONFIG_FILE — copy daily-email.rc.example and edit it"
+
+DAILY_REPORT=$(get_config       "daily.report"       "next")
+DAILY_EMAIL=$(get_config        "daily.email"        "")
+DAILY_SUBJECT=$(get_config      "daily.subject"      "Task Report")
+DAILY_ATTACHMENTS=$(get_config  "daily.attachments"  "")
+
+# Expand leading ~ in path
+DAILY_ATTACHMENTS="${DAILY_ATTACHMENTS/#\~/$HOME}"
+
+# Command-line arguments override configured report (all args, preserving words)
+[[ $# -gt 0 ]] && DAILY_REPORT="$*"
+
+[[ -n "$DAILY_EMAIL" ]] || die "daily.email not set in $CONFIG_FILE"
+
+command -v msmtp &>/dev/null \
+    || die "msmtp not found — install with: sudo apt install msmtp msmtp-mta"
+
+# ============================================================================
+# Sections — each writes to stdout; add new sections to build_body()
+# ============================================================================
+
+section_tasks() {
+    echo "=== ${DAILY_REPORT} ==="
+    echo ""
+    # If daily.report contains shell operators or starts with a command word,
+    # run it as a shell command; otherwise prepend `task rc.color=off rc.hooks=off`.
+    if [[ "$DAILY_REPORT" =~ (&&|\|\||[;|]) ]] \
+    || [[ "$DAILY_REPORT" =~ ^[a-zA-Z_/][a-zA-Z_/0-9-]*[[:space:]] ]]; then
+        bash -c "$DAILY_REPORT" 2>/dev/null || true
+    else
+        # shellcheck disable=SC2086  # word-splitting intentional: rc.* overrides + report name
+        task rc.color=off rc.hooks=off $DAILY_REPORT 2>/dev/null || true
+    fi
+}
+
+# section_weather() { ... }   # future
+# section_calendar() { ... }  # future
+
+build_body() {
+    date '+%A, %d %B %Y'
+    echo ""
+    section_tasks
+}
+
+# ============================================================================
+# Send
+# ============================================================================
+
+subject="${DAILY_SUBJECT}: $(date '+%A %d %b %Y')"
+body=$(build_body)
+
+# Collect attachment files from configured directory (non-recursive)
+_attach_files=()
+if [[ -n "$DAILY_ATTACHMENTS" && -d "$DAILY_ATTACHMENTS" ]]; then
+    while IFS= read -r -d $'\0' f; do
+        _attach_files+=("$f")
+    done < <(find "$DAILY_ATTACHMENTS" -maxdepth 1 -type f -print0 2>/dev/null | sort -z)
+fi
+
+if [[ ${#_attach_files[@]} -eq 0 ]]; then
+    # No attachments — plain text, identical to original behaviour
+    {
+        printf "From: Task Report <%s>\n" "$DAILY_EMAIL"
+        printf "To: %s\n"                 "$DAILY_EMAIL"
+        printf "Subject: %s\n"            "$subject"
+        printf "Content-Type: text/plain; charset=utf-8\n"
+        printf "\n"
+        printf "%s\n"                     "$body"
+    } | msmtp "$DAILY_EMAIL"
+    echo "[$SCRIPT_NAME] Sent '${subject}' to ${DAILY_EMAIL}"
+else
+    # Attachments found — build MIME multipart via Python stdlib, pipe to msmtp
+    _n=${#_attach_files[@]}
+    MIME_FROM="Task Report <${DAILY_EMAIL}>" \
+    MIME_TO="$DAILY_EMAIL" \
+    MIME_SUBJECT="$subject" \
+    MIME_BODY="$body" \
+    python3 - "${_attach_files[@]}" <<'PYEOF' | msmtp "$DAILY_EMAIL"
+import sys, os, mimetypes
+from email.mime.multipart import MIMEMultipart
+from email.mime.text      import MIMEText
+from email.mime.base      import MIMEBase
+from email                import encoders
+
+msg = MIMEMultipart()
+msg['From']    = os.environ['MIME_FROM']
+msg['To']      = os.environ['MIME_TO']
+msg['Subject'] = os.environ['MIME_SUBJECT']
+msg.attach(MIMEText(os.environ['MIME_BODY'], 'plain', 'utf-8'))
+
+for fpath in sys.argv[1:]:
+    ctype, _ = mimetypes.guess_type(fpath)
+    maintype, subtype = ctype.split('/', 1) if ctype else ('application', 'octet-stream')
+    with open(fpath, 'rb') as f:
+        part = MIMEBase(maintype, subtype)
+        part.set_payload(f.read())
+    encoders.encode_base64(part)
+    part.add_header('Content-Disposition', 'attachment',
+                    filename=os.path.basename(fpath))
+    msg.attach(part)
+
+sys.stdout.buffer.write(msg.as_bytes())
+PYEOF
+    echo "[$SCRIPT_NAME] Sent '${subject}' to ${DAILY_EMAIL} (${_n} attachment$([ "$_n" -eq 1 ] || echo s))"
+fi

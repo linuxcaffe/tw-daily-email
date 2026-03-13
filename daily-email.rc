@@ -1,11 +1,27 @@
 # daily-email.rc — configuration for tw-daily-email
 
-# Task report to send — any named report, with optional rc. overrides
-# Examples: next   list   rc.context=none next   due:today
-daily.report=rc.context=need ls
+# What to run for the report body.
+#
+# Simple form — task args only (script prepends `task rc.color=off rc.hooks=off`):
+#   daily.report = next
+#   daily.report = rc.context=none list
+#   daily.report = due:today
+#
+# Full command — starts with a program name or contains shell operators:
+#   daily.report = task rc.context=none next
+#   daily.report = cat ~/header.txt && task rc.context=none list
+#   daily.report = cat ~/header.txt && task rc.color=off rc.context=none list && echo "--- shopping ---" && task rc.color=off rc.context=shop ls
+#
+# Note: in full-command mode you are responsible for rc.color=off on each task call.
+daily.report = rc.context=need ls
 
 # Recipient email address (required — edit before first run)
 daily.email=
 
 # Email subject prefix — date is appended automatically
 daily.subject=Task Report
+
+# Attachments directory — all files found directly in this directory are
+# attached to the email. Leave empty (or omit) to send plain text only.
+# Tilde is expanded: ~/attachments is valid.
+#daily.attachments=~/attachments

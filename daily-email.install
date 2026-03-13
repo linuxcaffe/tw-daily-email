@@ -50,13 +50,20 @@ install() {
 
     tw_msg "Downloading files..."
 
+    # Migrate: remove old tw-daily-email script and units if present
+    rm -f "$SCRIPTS_DIR/tw-daily-email"
+    if command -v systemctl &>/dev/null; then
+        systemctl --user disable --now tw-daily-email.timer 2>/dev/null || true
+    fi
+    rm -f "$SYSTEMD_DIR/tw-daily-email.service" "$SYSTEMD_DIR/tw-daily-email.timer"
+
     # Main script
-    curl -fsSL "$BASE_URL/tw-daily-email" -o "$SCRIPTS_DIR/tw-daily-email" || {
-        tw_error "Failed to download tw-daily-email"
+    curl -fsSL "$BASE_URL/daily-email" -o "$SCRIPTS_DIR/daily-email" || {
+        tw_error "Failed to download daily-email"
         return 1
     }
-    chmod +x "$SCRIPTS_DIR/tw-daily-email"
-    debug_msg "Installed: $SCRIPTS_DIR/tw-daily-email" 2
+    chmod +x "$SCRIPTS_DIR/daily-email"
+    debug_msg "Installed: $SCRIPTS_DIR/daily-email" 2
 
     # Config — only write if not already present (preserve user's settings)
     if [[ ! -f "$CONFIG_DIR/daily-email.rc" ]]; then
@@ -70,20 +77,20 @@ install() {
     fi
 
     # Systemd service
-    curl -fsSL "$BASE_URL/tw-daily-email.service" \
-        -o "$SYSTEMD_DIR/tw-daily-email.service" || {
-        tw_error "Failed to download tw-daily-email.service"
+    curl -fsSL "$BASE_URL/daily-email.service" \
+        -o "$SYSTEMD_DIR/daily-email.service" || {
+        tw_error "Failed to download daily-email.service"
         return 1
     }
-    debug_msg "Installed: $SYSTEMD_DIR/tw-daily-email.service" 2
+    debug_msg "Installed: $SYSTEMD_DIR/daily-email.service" 2
 
     # Systemd timer
-    curl -fsSL "$BASE_URL/tw-daily-email.timer" \
-        -o "$SYSTEMD_DIR/tw-daily-email.timer" || {
-        tw_error "Failed to download tw-daily-email.timer"
+    curl -fsSL "$BASE_URL/daily-email.timer" \
+        -o "$SYSTEMD_DIR/daily-email.timer" || {
+        tw_error "Failed to download daily-email.timer"
         return 1
     }
-    debug_msg "Installed: $SYSTEMD_DIR/tw-daily-email.timer" 2
+    debug_msg "Installed: $SYSTEMD_DIR/daily-email.timer" 2
 
     # Reload systemd so it sees the new units
     if command -v systemctl &>/dev/null; then
@@ -99,10 +106,10 @@ install() {
     local TIMESTAMP
     TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
     mkdir -p "$(dirname "$MANIFEST_FILE")"
-    echo "$APPNAME|$VERSION|$SCRIPTS_DIR/tw-daily-email||$TIMESTAMP"        >> "$MANIFEST_FILE"
+    echo "$APPNAME|$VERSION|$SCRIPTS_DIR/daily-email||$TIMESTAMP"          >> "$MANIFEST_FILE"
     echo "$APPNAME|$VERSION|$CONFIG_DIR/daily-email.rc||$TIMESTAMP"         >> "$MANIFEST_FILE"
-    echo "$APPNAME|$VERSION|$SYSTEMD_DIR/tw-daily-email.service||$TIMESTAMP" >> "$MANIFEST_FILE"
-    echo "$APPNAME|$VERSION|$SYSTEMD_DIR/tw-daily-email.timer||$TIMESTAMP"  >> "$MANIFEST_FILE"
+    echo "$APPNAME|$VERSION|$SYSTEMD_DIR/daily-email.service||$TIMESTAMP"   >> "$MANIFEST_FILE"
+    echo "$APPNAME|$VERSION|$SYSTEMD_DIR/daily-email.timer||$TIMESTAMP"     >> "$MANIFEST_FILE"
     echo "$APPNAME|$VERSION|$DOCS_DIR/daily-email_README.md||$TIMESTAMP"    >> "$MANIFEST_FILE"
 
     tw_success "Installed daily-email v$VERSION"
@@ -111,8 +118,8 @@ install() {
     tw_msg "  1. Install msmtp:  sudo apt install msmtp msmtp-mta"
     tw_msg "  2. Create ~/.msmtprc with your Gmail App Password (chmod 600)"
     tw_msg "  3. Edit ~/.task/config/daily-email.rc — set daily.email"
-    tw_msg "  4. Test:  tw-daily-email"
-    tw_msg "  5. Enable timer:  systemctl --user enable --now tw-daily-email.timer"
+    tw_msg "  4. Test:  daily-email"
+    tw_msg "  5. Enable timer:  systemctl --user enable --now daily-email.timer"
     echo ""
     tw_msg "Documentation: $DOCS_DIR/daily-email_README.md"
     echo ""
@@ -131,6 +138,7 @@ remove() {
 
     # Stop and disable timer if running
     if command -v systemctl &>/dev/null; then
+        systemctl --user disable --now daily-email.timer 2>/dev/null || true
         systemctl --user disable --now tw-daily-email.timer 2>/dev/null || true
         systemctl --user daemon-reload 2>/dev/null || true
     fi
